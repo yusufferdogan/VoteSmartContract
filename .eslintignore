@@ -1,0 +1,22 @@
+# To avoid ignore
+!.vscode
+!*.js
+!*.json
+
+# ignore
+.git
+.husky
+build
+docs
+node_modules
+yarn.lock
+.*ignore
+contracts
+.env
+.env.example
+.nvmrc
+tags*
+coverage
+coverage.json
+.coverage*
+solbin
