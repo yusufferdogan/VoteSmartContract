@@ -1,33 +1,32 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.13;
+pragma solidity 0.8.7;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract YusufToken is ERC20 {
-    enum VoteStatus {
-        ACTIVE,
-        ACCEPTED,
-        REJECTED
-    }
     uint256 private constant REJECT = 0;
     uint256 private constant ACCEPT = 1;
     uint256 private constant DAY = 86400;
-    string private constant SUSPENDEDMESSAGE = "SAME VOTE FOR ACCEPT AND REJECT PROPOSAL SUSPENDED";
+    string private constant SUSPENDED_MESSAGE = "SAME VOTE FOR ACCEPT AND REJECT PROPOSAL SUSPENDED";
     error invalidVoteAsParam(uint256 voteAs, string message);
 
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
-        _mint(msg.sender, 10000000 * 10**uint256(decimals()));
+    constructor(/*string memory name, string memory symbol*/) ERC20("YusufToken", "Yusuf") {
+        _mint(msg.sender, 100000 * 10**uint256(decimals()));
     }
 
+    function faucet(uint256 amount) external {
+        _mint(msg.sender, amount * 10**uint256(decimals()));
+    } 
+
     function decimals() public view virtual override returns (uint8) {
-        return 8;
+        return 6;
     }
 
     modifier openProposal(uint256 proposalId) {
         require(
             block.timestamp <
-                (proposals[proposalId].createdTime + (proposals[proposalId].deadlineAsDays) * DAY),
+                (proposals[proposalId].deadline),
             "PROPOSAL CLOSED TO VOTE"
         );
         _;
@@ -36,14 +35,14 @@ contract YusufToken is ERC20 {
     modifier closedProposal(uint256 proposalId) {
         require(
             block.timestamp >
-                (proposals[proposalId].createdTime + (proposals[proposalId].deadlineAsDays) * DAY),
-            "VOTE IS STILL ACTIVE"
+                (proposals[proposalId].deadline),
+            "PROPOSAL IS OPEN TO VOTE"
         );
         _;
     }
 
     modifier validProposalId(uint256 proposalId) {
-        require(proposals.length > 0 && proposalId < proposals.length, "PROPOSAL NOT FOUND");
+        require(proposals[proposalId].creator != address(0), "PROPOSAL NOT FOUND");
         _;
     }
 
@@ -53,9 +52,7 @@ contract YusufToken is ERC20 {
         string description;
         uint256 acceptedVotes;
         uint256 rejectedVotes;
-        VoteStatus status;
-        uint256 createdTime;
-        uint256 deadlineAsDays;
+        uint256 deadline;
     }
 
     Proposal[] public proposals;
@@ -74,9 +71,7 @@ contract YusufToken is ERC20 {
                 description,
                 0,
                 0,
-                VoteStatus.ACTIVE,
-                block.timestamp,
-                deadlineAsDays
+                block.timestamp + deadlineAsDays * DAY
             )
         );
     }
@@ -86,48 +81,25 @@ contract YusufToken is ERC20 {
         uint256 amount,
         uint256 proposalId
     ) external validProposalId(proposalId) openProposal(proposalId) {
-        require(proposals[proposalId].status == VoteStatus.ACTIVE, "Invalid proposalStatus");
         require(balanceOf(msg.sender) > amount, "Unsufficient Balance");
-
-        if (voteAs == REJECT) {
-            proposals[proposalId].rejectedVotes += amount;
-            _burn(msg.sender, amount);
-        } else if (voteAs == ACCEPT) {
-            proposals[proposalId].acceptedVotes += amount;
-            _burn(msg.sender, amount);
-        } else {
+        if(voteAs != REJECT && voteAs != ACCEPT) {
             revert invalidVoteAsParam(voteAs, "INVALID PARAM MUST BE 0 FOR REJECT , 1 FOR ACCEPT ");
         }
+        if (voteAs == REJECT) {
+            proposals[proposalId].rejectedVotes += amount;
+        } else if (voteAs == ACCEPT) {
+            proposals[proposalId].acceptedVotes += amount;
+        } 
+        _burn(msg.sender, amount);
     }
 
-    function finalizeProposal(uint256 proposalId) internal closedProposal(proposalId) {
-        require(
-            proposals[proposalId].status == VoteStatus.ACTIVE,
-            "Cant finalize finalized Proposal"
-        );
-
+    function isProposalAccepted(uint256 proposalId) external view closedProposal(proposalId) returns (bool) {
         if (proposals[proposalId].acceptedVotes > proposals[proposalId].rejectedVotes) {
-            proposals[proposalId].status = VoteStatus.ACCEPTED;
-        } else if (proposals[proposalId].acceptedVotes < proposals[proposalId].rejectedVotes) {
-            proposals[proposalId].status = VoteStatus.REJECTED;
-        } else {
-            revert(SUSPENDEDMESSAGE);
-        }
-    }
-
-    function isProposalAccepted(uint256 proposalId) external returns (bool) {
-        if (
-            block.timestamp >
-            (proposals[proposalId].createdTime + (proposals[proposalId].deadlineAsDays) * DAY)
-        ) {
-            if (proposals[proposalId].status == VoteStatus.ACTIVE) {
-                finalizeProposal(proposalId);
-            }
-        }
-        if (proposals[proposalId].status == VoteStatus.ACCEPTED) {
             return true;
-        } else {
+        } else if (proposals[proposalId].acceptedVotes < proposals[proposalId].rejectedVotes) {
             return false;
+        } else {
+            revert(SUSPENDED_MESSAGE);
         }
     }
 }
